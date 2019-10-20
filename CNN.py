@@ -36,11 +36,17 @@ import computations as comp
 import functional as func
 
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
 from sklearn.decomposition import PCA
 from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import KFold
 from scipy.fftpack import fft
+
+from keras.utils.np_utils import to_categorical
+from keras.models import Sequential
+from keras.layers import Dense, Dropout, Flatten, Conv2D, MaxPool2D, AvgPool2D, BatchNormalization, Reshape
+from keras.preprocessing.image import ImageDataGenerator
+from keras.callbacks import LearningRateScheduler
 
 
 
@@ -53,7 +59,7 @@ success_indices = []
 for indice, full_name in enumerate(full_names):
     print("Fetching file : %s" % full_name)
     # General information
-    data = io.loadmat(full_name)
+    data = io.loadmat('data-starplus-05680-v7.mat')
     n_voxels = data['meta']['nvoxels'].flat[0].squeeze()
     n_trials = data['meta']['ntrials'].flat[0].squeeze()
     dim_x = data['meta']['dimx'].flat[0].squeeze()
@@ -84,7 +90,7 @@ for indice, full_name in enumerate(full_names):
             ROI[x, y, z] = data['meta']['colToROI'].flat[0].tolist()[j][0][0]
         except ValueError:
             print('Voxel %s does not relay to any ROI' % j)
-            ROI[x, y, z] = np.nan
+            ROI[x, y, z] = '0.0'
         
     # Averaging on the time
     for k, i_trial in enumerate(good_trials):
@@ -118,9 +124,103 @@ for indice, full_name in enumerate(full_names):
 scaler = StandardScaler()
 fig = plt.figure()
 for num in range(X[1].shape[2]):
-    y = fig.add_subplot(2,4,num+1)
-    y.imshow(scaler.fit_transform(X[0][:,:,num]))
+    scan = fig.add_subplot(2,4,num+1)
+    scan.imshow(scaler.fit_transform(X[0][:,:,num]))
 plt.show()
 
-#plot the first image in the dataset
-#plt.imshow(X[0])
+
+X_mean = np.mean(X, axis = 3)
+fig = plt.figure()
+scan = fig.add_subplot(1,1,1)
+scan.imshow(scaler.fit_transform(X_mean[0]))
+plt.show()
+X_train = X_mean.reshape(-1,64,64,1)
+Y_train = to_categorical(y, num_classes = 2)
+
+# GLOBAL VARIABLES
+annealer = LearningRateScheduler(lambda x: 1e-3 * 0.95 ** x, verbose=0)
+styles=[':','-.','--','-',':','-.','--','-',':','-.','--','-']
+
+#EXPERIMENT 1
+# BUILD CONVOLUTIONAL NEURAL NETWORKS
+nets = 3
+model = [0] *nets
+
+for j in range(3):
+    model[j] = Sequential()
+    model[j].add(Conv2D(24,kernel_size=5,padding='same',activation='relu',
+            input_shape=(64,64,1)))
+    model[j].add(MaxPool2D())
+    if j>0:
+        model[j].add(Conv2D(48,kernel_size=5,padding='same',activation='relu'))
+        model[j].add(MaxPool2D())
+    if j>1:
+        model[j].add(Conv2D(64,kernel_size=5,padding='same',activation='relu'))
+        model[j].add(MaxPool2D(padding='same'))
+    model[j].add(Flatten())
+    model[j].add(Dense(256, activation='relu'))
+    model[j].add(Dense(2, activation='softmax'))
+    model[j].compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
+"""
+# CREATE VALIDATION SET
+X_train2, X_val2, Y_train2, Y_val2 = train_test_split(X_train, Y_train, test_size = 0.2)
+# TRAIN NETWORKS
+history = [0] * nets
+names = ["(C-P)x1","(C-P)x2","(C-P)x3"]
+epochs = 20
+for j in range(nets):
+    history[j] = model[j].fit(X_train2,Y_train2, batch_size=80, epochs = epochs, 
+        validation_data = (X_val2,Y_val2), callbacks=[annealer], verbose=0)
+    print("CNN {0}: Epochs={1:d}, Train accuracy={2:.5f}, Validation accuracy={3:.5f}".format(
+             names[j],epochs,max(history[j].history['accuracy']),max(history[j].history['val_accuracy']) ))
+"""
+
+#LEAVE ONE OUT CROSS-VALIDATION 
+loo = LeaveOneOut()
+history = [0] * nets
+names = ["(C-P)x1","(C-P)x2","(C-P)x3"]
+cv_result = []
+
+for j in range(nets):
+    cv_result = []
+    for train_index, test_index in loo.split(X_train):
+        clf = model[j]
+        X_train2, X_val2 = X_train[train_index], X_train[test_index]
+        Y_train2, Y_val2 = Y_train[train_index], Y_train[test_index]
+        acc = clf.fit(X_train2,Y_train2, batch_size=None, epochs=1, verbose=0,
+                      validation_data=(X_val2, Y_val2), workers=1, callbacks=[annealer])
+        cv_result.append(acc.history['val_accuracy'])
+    history[j] = np.mean(cv_result)
+    print("CNN {0}: Validation accuracy={1:.5f}".format(names[j], history[j]))
+
+#EXPERIMENT 2
+nets = 6
+model = [0] *nets
+for j in range(6):
+    model[j] = Sequential()
+    model[j].add(Conv2D(j*8+8,kernel_size=5,activation='relu',input_shape=(64,64,1)))
+    model[j].add(MaxPool2D())
+    model[j].add(Conv2D(j*16+16,kernel_size=5,activation='relu'))
+    model[j].add(MaxPool2D())
+    model[j].add(Flatten())
+    model[j].add(Dense(256, activation='relu'))
+    model[j].add(Dense(2, activation='softmax'))
+    model[j].compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])    
+    
+#LEAVE ONE OUT CROSS-VALIDATION 
+history = [0] * nets
+names = ["8 maps","16 maps","24 maps","32 maps","48 maps","64 maps"]
+cv_result = []
+
+for j in range(nets):
+    cv_result = []
+    for train_index, test_index in loo.split(X_train):
+        clf = model[j]
+        X_train2, X_val2 = X_train[train_index], X_train[test_index]
+        Y_train2, Y_val2 = Y_train[train_index], Y_train[test_index]
+        acc = clf.fit(X_train2,Y_train2, batch_size=None, epochs=1, verbose=0,
+                      validation_data=(X_val2, Y_val2), workers=1, callbacks=[annealer])
+        cv_result.append(acc.history['val_accuracy'])
+    history[j] = np.mean(cv_result)
+    print("CNN {0}: Validation accuracy={1:.5f}".format(names[j], history[j]))
+    
