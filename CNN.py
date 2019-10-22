@@ -57,9 +57,10 @@ cols = ["CALC", "LIPL", "LT", "LTRIA", "LOPER", "LIPS", "LDLPFC"]
 
 success_indices = []
 for indice, full_name in enumerate(full_names):
-    print("Fetching file : %s" % full_name)
+    fname = 'data-starplus-04820-v7.mat'
+    print("Fetching file : %s" % fname)
     # General information
-    data = io.loadmat('data-starplus-05680-v7.mat')
+    data = io.loadmat(fname)
     n_voxels = data['meta']['nvoxels'].flat[0].squeeze()
     n_trials = data['meta']['ntrials'].flat[0].squeeze()
     dim_x = data['meta']['dimx'].flat[0].squeeze()
@@ -140,9 +141,8 @@ Y_train = to_categorical(y, num_classes = 2)
 # GLOBAL VARIABLES
 annealer = LearningRateScheduler(lambda x: 1e-3 * 0.95 ** x, verbose=0)
 styles=[':','-.','--','-',':','-.','--','-',':','-.','--','-']
-
+"""
 #EXPERIMENT 1
-# BUILD CONVOLUTIONAL NEURAL NETWORKS
 nets = 3
 model = [0] *nets
 
@@ -161,19 +161,6 @@ for j in range(3):
     model[j].add(Dense(256, activation='relu'))
     model[j].add(Dense(2, activation='softmax'))
     model[j].compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
-"""
-# CREATE VALIDATION SET
-X_train2, X_val2, Y_train2, Y_val2 = train_test_split(X_train, Y_train, test_size = 0.2)
-# TRAIN NETWORKS
-history = [0] * nets
-names = ["(C-P)x1","(C-P)x2","(C-P)x3"]
-epochs = 20
-for j in range(nets):
-    history[j] = model[j].fit(X_train2,Y_train2, batch_size=80, epochs = epochs, 
-        validation_data = (X_val2,Y_val2), callbacks=[annealer], verbose=0)
-    print("CNN {0}: Epochs={1:d}, Train accuracy={2:.5f}, Validation accuracy={3:.5f}".format(
-             names[j],epochs,max(history[j].history['accuracy']),max(history[j].history['val_accuracy']) ))
-"""
 
 #LEAVE ONE OUT CROSS-VALIDATION 
 loo = LeaveOneOut()
@@ -187,12 +174,26 @@ for j in range(nets):
         clf = model[j]
         X_train2, X_val2 = X_train[train_index], X_train[test_index]
         Y_train2, Y_val2 = Y_train[train_index], Y_train[test_index]
-        acc = clf.fit(X_train2,Y_train2, batch_size=None, epochs=1, verbose=0,
+        acc = clf.fit(X_train2,Y_train2, batch_size=None, epochs=10, verbose=0,
                       validation_data=(X_val2, Y_val2), workers=1, callbacks=[annealer])
         cv_result.append(acc.history['val_accuracy'])
     history[j] = np.mean(cv_result)
     print("CNN {0}: Validation accuracy={1:.5f}".format(names[j], history[j]))
-
+"""
+"""
+# CREATE VALIDATION SET
+X_train2, X_val2, Y_train2, Y_val2 = train_test_split(X_train, Y_train, test_size = 0.2)
+# TRAIN NETWORKS
+history = [0] * nets
+names = ["(C-P)x1","(C-P)x2","(C-P)x3"]
+epochs = 20
+for j in range(nets):
+    history[j] = model[j].fit(X_train2,Y_train2, batch_size=80, epochs = epochs, 
+        validation_data = (X_val2,Y_val2), callbacks=[annealer], verbose=0)
+    print("CNN {0}: Epochs={1:d}, Train accuracy={2:.5f}, Validation accuracy={3:.5f}".format(
+             names[j],epochs,max(history[j].history['accuracy']),max(history[j].history['val_accuracy']) ))
+"""
+loo = LeaveOneOut()
 #EXPERIMENT 2
 nets = 6
 model = [0] *nets
@@ -201,6 +202,10 @@ for j in range(6):
     model[j].add(Conv2D(j*8+8,kernel_size=5,activation='relu',input_shape=(64,64,1)))
     model[j].add(MaxPool2D())
     model[j].add(Conv2D(j*16+16,kernel_size=5,activation='relu'))
+    """
+    model[j].add(MaxPool2D())
+    model[j].add(Conv2D(j*32+32,kernel_size=5,activation='relu'))
+    """
     model[j].add(MaxPool2D())
     model[j].add(Flatten())
     model[j].add(Dense(256, activation='relu'))
@@ -218,9 +223,41 @@ for j in range(nets):
         clf = model[j]
         X_train2, X_val2 = X_train[train_index], X_train[test_index]
         Y_train2, Y_val2 = Y_train[train_index], Y_train[test_index]
-        acc = clf.fit(X_train2,Y_train2, batch_size=None, epochs=1, verbose=0,
+        acc = clf.fit(X_train2,Y_train2, batch_size=None, epochs=5, verbose=0,
                       validation_data=(X_val2, Y_val2), workers=1, callbacks=[annealer])
         cv_result.append(acc.history['val_accuracy'])
     history[j] = np.mean(cv_result)
     print("CNN {0}: Validation accuracy={1:.5f}".format(names[j], history[j]))
     
+#EXPERIMENT 3
+nets = 4
+model = [0] *nets
+for j in range(4):
+    model[j] = Sequential()
+    model[j].add(Conv2D(j*8+8,kernel_size=5,activation='relu',input_shape=(64,64,1)))
+    model[j].add(MaxPool2D())
+    model[j].add(Conv2D(j*16+16,kernel_size=5,activation='relu'))
+    model[j].add(MaxPool2D())
+    model[j].add(Conv2D(j*32+32,kernel_size=5,activation='relu'))
+    model[j].add(MaxPool2D())
+    model[j].add(Flatten())
+    model[j].add(Dense(512, activation='relu'))
+    model[j].add(Dense(2, activation='softmax'))
+    model[j].compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])    
+    
+#LEAVE ONE OUT CROSS-VALIDATION 
+history = [0] * nets
+names = ["8 maps","16 maps","24 maps","32 maps"]
+cv_result = []
+
+for j in range(nets):
+    cv_result = []
+    for train_index, test_index in loo.split(X_train):
+        clf = model[j]
+        X_train2, X_val2 = X_train[train_index], X_train[test_index]
+        Y_train2, Y_val2 = Y_train[train_index], Y_train[test_index]
+        acc = clf.fit(X_train2,Y_train2, batch_size=None, epochs=5, verbose=0,
+                      validation_data=(X_val2, Y_val2), workers=1, callbacks=[annealer])
+        cv_result.append(acc.history['val_accuracy'])
+    history[j] = np.mean(cv_result)
+    print("CNN {0}: Validation accuracy={1:.5f}".format(names[j], history[j]))
