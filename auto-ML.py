@@ -7,12 +7,10 @@ Created on Tue Oct  8 10:30:49 2019
 """
 from utils import train_test
 from utils import loo_estimators
-from utils import frequency_filter
 from utils import loo_fit_predict
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import scsa 
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
 from itertools import chain
@@ -28,118 +26,33 @@ from sklearn.pipeline import Pipeline
 from sklearn.datasets.base import Bunch
 from scipy.io import loadmat
 
+from utils.feach_gen import gen_eigen
+from utils.train_test import fit_predict
+from utils import preprocessing
+from utils.load_data import load_data
+
+
 
 class EEG:
     
-    def __init__(self, filename = 'data.csv', group = False):
+    def __init__(self, filename = 'data.csv', header = False, index = False, binary = True, nn = False):
+        # define path to file with data
         self.filename = filename
-        self.group = group
+        # define if there is a header in your data
+        self.header = header
+        # define if there is an index column in your data
+        self.index = index
+        # define if your dataset contain more than 2 classes
+        self.binary = binary
+        # define if you want use neural network as predictive model
+        self.nn = nn
         
-    def preproc(self, df):
-        df.rename(columns={'Unnamed: 0':'indx'}, inplace=True)
-        # Get patient_id and time of recording 
-        if self.group: df['sec'], df['patient_id'] = df['indx'].str.split('.', 1).str
-        df.drop(columns=['indx'], inplace=True)
-        if self.group:
-            # Replace id with the corresponding numbers
-            patient_map = dict(zip(df['patient_id'].unique(), list(range(1, 501))))
-            df = df.replace({'patient_id': patient_map})
-            df['sec'] = df['sec'].str[1:]
-            df['sec'] = df['sec'].astype('int16')
-            # reorder columns
-            cols = ['patient_id', 'sec'] + list(df.columns[:-2])
-            df = df[cols]
-            # sort data by patient_id and time
-            df.sort_values(['patient_id', 'sec'], inplace=True)
-        # binarize target
-        df['y'].loc[df['y'] > 1] = 0
-        return df
-
-        
-    def train_set_gen(self, df):
-        labels = []
-        lamdas = []
-        Nh = []
-        if self.group:
-            # Loop across trials
-            for k in df['patient_id'].unique():
-                temp = df[df['patient_id'] == k]
-                labels.append(temp['y'].values)
-                # Loop across time frames of a trial
-                for i in temp['sec']:
-                    # SCSA takes as input only 1D signal
-                    signal = temp[temp['sec'] == i].drop(['patient_id','sec', 'y'], axis = 1).values[0]
-                    # h should be tuned for each signal manually performing the best reconstruction 
-                    h = max(signal)/20
-                    yscsa, kappa, n, psinnor = scsa.scsa(signal, h)
-                    # Collect numbers of eigenvalues for each signal
-                    Nh.append(n)
-                    # Collect eigenvalues for each signal
-                    lamdas.append(kappa.diagonal().tolist())  
-            y = list(chain.from_iterable(labels))
-        else:
-            # Loop across data samples
-            for i in range(len(df)):
-                signal = df.iloc[i].drop('y', axis = 0).values
-                # h should be tuned for each signal manually performing the best reconstruction 
-                h = max(signal)/20
-                yscsa, kappa, n, psinnor = scsa.scsa(signal, h)
-                # Collect numbers of eigenvalues for each signal
-                Nh.append(n)
-                # Collect eigenvalues for each signal
-                lamdas.append(kappa.diagonal().tolist()) 
-            y = df['y'].values
-        Nh = min(Nh)
-        # Cut eigenvalues vectors to create uniform feature vectors
-        X = np.array([lamdas[i][:Nh] for i in range(len(lamdas))])
-        return X, y
-    
-    def fit_predict(self, X, y, groups):
-        """
-        data = pd.DataFrame(data = X)
-        data['y'] = y
-        data['groups'] = groups
-        # Balance the data
-        length = data[data['y'] == 1].values.shape[0]
-        temp = data[data['y'] == 0]
-        temp = temp.sample(frac=1)[:length]
-        temp = temp.append(data[data['y'] == 1])
-        temp = temp.sample(frac=1)
-        X = temp.drop(['y', 'groups'], axis = 1).values
-        y = temp['y'].values
-        groups = temp['groups'].values
-        """
-        pipe = Pipeline([
-                ('scale', StandardScaler()),
-                ('clf', SVC(kernel='rbf', gamma='auto',
-                            C=1, class_weight='balanced'))])
-        kf = GroupKFold(n_splits=10).split(X, y, groups)
-        scoring = 'roc_auc'
-        # Evaluate pipeline
-        score = cross_val_score(pipe, X, y, cv=kf, scoring=scoring, n_jobs=-1)
-        print('Mean ROC_AUC: ', np.mean(score))
-        print('ROC_AUC std: ', np.std(score))
-        return np.mean(score)
-
     def main(self):
-        data = pd.read_csv(self.filename)
-        df = self.preproc(data) # df = data if no preprocessing is needed
-        if self.group: vals = df.drop(['patient_id','sec', 'y'], axis = 1)
-        else: vals = df.drop(['y'], axis = 1)
-        # Make data non-negative for SCSA 
-        vals = vals - vals.min().min()
-        df[vals.columns] = vals
-        X, y = self.train_set_gen(df)
-        feach_size = X.shape[1]
-        if self.group:
-            # devide all trials by groups excluding biases in training
-            groups = df['patient_id'].values
-            score = self.fit_predict(X, y, groups)
-        else:
-            score = train_test.fit_predict(X, y)
-        print("Everything is done!")
-        return score, feach_size
-    
+        signal, y = load_data(self.filename, self.index, self.binary)
+        X = gen_eigen(signal)
+        acc, roc_auc, feach_num = fit_predict(X, y)
+        print('Best accuracy: %f \nBest roc-auc: %f \nNumber of features: %s' % (acc,roc_auc,feach_num))
+        return 0
     
 class fMRI:
     
@@ -245,19 +158,20 @@ class NIRS:
             feach_size.append(fsize)
         return np.mean(pure_acc), np.mean(accuracy), np.mean(feach_size) 
     
- 
+"""
 my_fMRI_samples = ['data-starplus-04847-v7.mat', 'data-starplus-04820-v7.mat', 
                  'data-starplus-04799-v7.mat', 'data-starplus-05675-v7.mat',
                  'data-starplus-05680-v7.mat', 'data-starplus-05710-v7.mat']
 my_NIRS_samples = ['S0%s' % i for i in range(1, 9)]
 my_EEG_samples = 'data.csv'
-"""
+
 my_class = EEG(my_EEG_samples, False)
 score, k = my_class.main()
-"""
+
 my_class = NIRS(my_NIRS_samples)
 pure_score, score, k = my_class.main()
 print(pure_score, score, k)
-
-        
-        
+"""
+# use code below to process EEG epileptic seizure detection        
+my_EEG = EEG(filename = 'data.csv', index = True, binary = False)
+my_EEG.main()
