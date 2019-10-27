@@ -17,34 +17,50 @@ import pandas as pd
 
 def fit_predict(X, y):
     """
-    data = pd.DataFrame(data = X)
-    data['y'] = y
-    # Balance and shuffle the data
-    length = data[data['y'] == 1].values.shape[0]
-    temp = data[data['y'] == 0]
-    temp = temp.sample(frac=1)[:length]
-    temp = temp.append(data[data['y'] == 1])
-    temp = temp.sample(frac=1)
-    
-    X = temp.drop('y', axis = 1).values
-    y = temp['y'].values
+    This function returns maximum accuracy score, maximum roc_auc score and 
+    size of feature vector
     """
     # Normilize the data
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     scoring = 'roc_auc'
+    max_auc = 0
     # Evaluate on different Classifiers
     score = cross_val_score(SVC(kernel='linear', gamma='auto',
-                                C=1, class_weight='balanced'), 
+                               C=1, class_weight='balanced'), 
                      X_scaled, y, cv=KFold(n_splits=10).split(X, y), scoring=scoring, n_jobs=-1)
+    if np.mean(score) > max_auc: max_auc = np.mean(score)
     print('Mean SVC ROC_AUC: ', np.mean(score))
     print('SVC ROC_AUC std: ', np.std(score))
     score = cross_val_score(LogisticRegression(random_state=0, solver='liblinear'), 
                             X_scaled, y, cv=KFold(n_splits=10).split(X, y), scoring=scoring, n_jobs=-1)
+    if np.mean(score) > max_auc: max_auc = np.mean(score)
     print('Mean LR ROC_AUC: ', np.mean(score))
     print('LR ROC_AUC std: ', np.std(score))
     score = cross_val_score(DecisionTreeClassifier(random_state=0), 
                             X_scaled, y, cv=KFold(n_splits=10).split(X, y), scoring=scoring, n_jobs=-1)
+    if np.mean(score) > max_auc: max_auc = np.mean(score)
     print('Mean DT ROC_AUC: ', np.mean(score))
     print('DT ROC_AUC std: ', np.std(score))
-    return np.mean(score)
+    
+    scoring = 'accuracy'
+    max_acc = 0
+    # Evaluate on different Classifiers
+    score = cross_val_score(SVC(kernel='linear', gamma='auto',
+                                C=1, class_weight='balanced'), 
+                     X_scaled, y, cv=KFold(n_splits=10).split(X, y), scoring=scoring, n_jobs=-1)
+    if np.mean(score) > max_acc: max_acc = np.mean(score)
+    print('Mean SVC Accuracy: ', np.mean(score))
+    print('SVC Accuracy std: ', np.std(score))
+    score = cross_val_score(LogisticRegression(random_state=0, solver='liblinear'), 
+                            X_scaled, y, cv=KFold(n_splits=10).split(X, y), scoring=scoring, n_jobs=-1)
+    if np.mean(score) > max_acc: max_acc = np.mean(score)
+    print('Mean LR Accuracy: ', np.mean(score))
+    print('LR Accuracy std: ', np.std(score))
+    score = cross_val_score(DecisionTreeClassifier(random_state=0), 
+                            X_scaled, y, cv=KFold(n_splits=10).split(X, y), scoring=scoring, n_jobs=-1)
+    if np.mean(score) > max_acc: max_acc = np.mean(score)
+    print('Mean DT Accuracy: ', np.mean(score))
+    print('DT Accuracy std: ', np.std(score))
+    
+    return max_acc, max_auc, X.shape[1]
