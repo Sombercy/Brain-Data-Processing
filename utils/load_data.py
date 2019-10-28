@@ -1,23 +1,21 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 from scipy.io import loadmat
 import pandas as pd
 
-def load_data(filename, index = False, binary = True):
+def load_data(filename, header = None, index_col = None, binarize = False):
     if filename[-3:] == 'csv': 
-        df = pd.read_csv(filename)
-        if index: 
-            df = df.drop(df.columns[0], axis=1)
-        X = df.drop(['y'], axis = 1).values
-        y = df['y'].values
-        if not binary:
-            # binarize target
-            y[y>1] = 0
+        df = pd.read_csv(filename, header = header, index_col = index_col)
     elif filename[-3:] == 'mat':
         df = loadmat(filename, squeeze_me=True)
-        X = df['X'].values
+    if (header != None):
+        X = df.drop(['y'], axis = 1).values
         y = df['y'].values
-        if not binary:
-            # binarize target
-            y[y>1] = 0
-    return X, y
+        if binarize:
+            y[y!=1] = 0
+            df['y'] = y
+    else:
+        X = df[df.columns[:-1]].values
+        y = df[df.columns[-1]].values
+        if binarize:
+            y[y!=1] = 0
+            df[df.columns[-1]] = y
+    return df, X, y
