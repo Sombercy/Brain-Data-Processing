@@ -10,6 +10,9 @@ import numpy as np
 from scipy.sparse import diags
 from scipy.special import gamma
 from scipy.integrate import simps
+from itertools import chain
+from scipy.fftpack import rfft, ifft
+
 
 def delta(n, fex, feh):
     ex = np.kron([x for x in range(n-1, 0, -1)], np.ones((n,1)))
@@ -51,7 +54,35 @@ def scsa(y, h):
     if y.shape != yscsa.shape: yscsa = yscsa.T
     return yscsa, kappa, Nh, psinnor
 
-def avactivity(X, t0 = 0, tmin, tmax, sfreq):
+def gen_eigen(X, channel = 'single'):
+    X -= X.min().min()
+    lamda = []
+    Nh = []
+    if channel == 'single':
+        for i in range(len(X)):
+            y = np.array(X[i])
+            h = max(y)/20
+            yscsa, kappa, n, psinnor = scsa(y, h)
+            lamda.append(kappa.diagonal().tolist())
+            Nh.append(n)
+        N = min(Nh)
+        return np.array([lamda[i][:N] for i in range(len(lamda))])
+    elif channel == 'multi':
+        for i in range(len(X)):
+            eig = []
+            eig_n = []
+            for j in range(X[i].shape[1]):
+                y = np.array(X[i][j])
+                h = max(y)/20
+                yscsa, kappa, n, psinnor = scsa(y, h)
+                eig.append(kappa.diagonal().tolist())
+                eig_n.append(n)
+            lamda.append(eig)
+            Nh.append(eig_n)
+        N = [min(np.asarray(Nh)[:, j]) for j in range(X.shape[2])]
+        return np.array([list(chain.from_iterable([lamda[i][j][:N[j]] for j in range(len(N))])) for i in range(len(lamda))])
+    
+def avactivity(X, t0, tmin, tmax, sfreq):
     
     """This function calculate average activity of each channel during a 
        given period (tmin, tmax) and sampling frequency sfreq of the signal. 
