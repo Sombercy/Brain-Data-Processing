@@ -11,8 +11,7 @@ from scipy.sparse import diags
 from scipy.special import gamma
 from scipy.integrate import simps
 from itertools import chain
-from scipy.fftpack import rfft, ifft
-
+from scipy.fftpack import rfft
 
 def delta(n, fex, feh):
     ex = np.kron([x for x in range(n-1, 0, -1)], np.ones((n,1)))
@@ -54,7 +53,7 @@ def scsa(y, h):
     if y.shape != yscsa.shape: yscsa = yscsa.T
     return yscsa, kappa, Nh, psinnor
 
-def gen_eigen(X, channel = 'single'):
+def gen_eigen(X, channel = None):
     X -= X.min().min()
     lamda = []
     Nh = []
@@ -86,9 +85,9 @@ def avactivity(X, t0, tmin, tmax, sfreq):
     
     """This function calculate average activity of each channel during a 
        given period (tmin, tmax) and sampling frequency sfreq of the signal. 
-       After that concatenations of means is done.
+       After that concatenation of means is done.
        For multi-channel data with shape (samples, channels, time) only"""
-       
+    
     begin = np.round((tmin - t0) * sfreq).astype(np.int)
     end = np.round((tmax - t0) * sfreq).astype(np.int)
     data = X[:, :, begin:end].copy()
@@ -96,9 +95,16 @@ def avactivity(X, t0, tmin, tmax, sfreq):
     X = np.array([list(chain.from_iterable(data[i]))for i in range(len(data))])
     return X
 
-def major_freqs(signal, k_first):
+def major_freqs(signal, channel, k_first = None):
     
     """This function returns k_first dominant frequencies of signal spectrum"""
-    
-    y = np.array([abs(rfft(signal[i])) for i in range(len(signal))])   
-    return y.argsort()[-k_first:][::-1]
+    if channel == 'single':
+        y = np.array([abs(rfft(signal[i])) for i in range(len(signal))])
+        if k_first == None:
+            X = y.argsort()[:][::-1]
+        else:
+            X = y.argsort()[-k_first:][::-1]
+    elif channel == 'multi':
+        y = [abs(rfft(list(chain.from_iterable(signal[i])))) for i in range(len(signal))]
+        X = y.argsort()[:][::-1]
+    return X
