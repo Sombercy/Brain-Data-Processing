@@ -1,1 +1,1 @@
-# Brain-Data-Decoding
+# Brain-Data-Processing
